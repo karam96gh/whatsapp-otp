@@ -123,7 +123,9 @@ app.post('/send-otp', async (req, res) => {
                 message: 'Please scan the QR code first to connect WhatsApp'
             });
         }
-
+        if (phoneNumber.startsWith('+')) {
+            phoneNumber = phoneNumber.substring(1);
+        }
         // Send OTP
         await sendOTP(phoneNumber, otp);
         
