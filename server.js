@@ -92,7 +92,7 @@ client.on('disconnected', (reason) => {
 function sendOTP(phoneNumber, otp) {
     const number = phoneNumber.includes('@c.us') ? phoneNumber : `${phoneNumber}@c.us`;
     const message = `Your OTP is: ${otp}`;
-    
+    console.log(number);
     return client.sendMessage(number, message)
         .then(response => {
             console.log('OTP sent successfully:', response);
@@ -127,6 +127,7 @@ app.post('/send-otp', async (req, res) => {
             phoneNumber = phoneNumber.substring(1);
         }
         // Send OTP
+
         await sendOTP(phoneNumber, otp);
         
         // Response
