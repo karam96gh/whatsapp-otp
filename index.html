@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp Message Sender</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        .container {
+            background: #fff;
+            padding: 20px 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 400px;
+        }
+        h2 {
+            text-align: center;
+            color: #333;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        input, textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+        button {
+            background-color: #25D366;
+            color: white;
+            border: none;
+            padding: 10px;
+            width: 100%;
+            font-size: 18px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #1da755;
+        }
+        .message {
+            margin-top: 15px;
+            text-align: center;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Send WhatsApp Message</h2>
+        <div class="form-group">
+            <label for="number">Phone Number (with country code)</label>
+            <input type="text" id="number" placeholder="+963999999999">
+        </div>
+        <div class="form-group">
+            <label for="message">Message</label>
+            <textarea id="message" rows="5" placeholder="Type your message here..."></textarea>
+        </div>
+        <button id="sendButton">Send Message</button>
+        <div class="message" id="statusMessage"></div>
+    </div>
+
+    <script>
+        document.getElementById('sendButton').addEventListener('click', async () => {
+            const number = document.getElementById('number').value.trim();
+            const message = document.getElementById('message').value.trim();
+            const statusMessage = document.getElementById('statusMessage');
+
+            if (!number || !message) {
+                statusMessage.textContent = 'Please fill in both fields.';
+                statusMessage.style.color = 'red';
+                return;
+            }
+
+            statusMessage.textContent = 'Sending...';
+            statusMessage.style.color = 'blue';
+
+            try {
+                const response = await fetch('http://localhost:5000/send-message', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ number, message }),
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    statusMessage.textContent = result.message;
+                    statusMessage.style.color = 'green';
+                } else {
+                    statusMessage.textContent = result.error || 'Failed to send message.';
+                    statusMessage.style.color = 'red';
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                statusMessage.textContent = 'Error sending message.';
+                statusMessage.style.color = 'red';
+            }
+        });
+    </script>
+</body>
+</html>
