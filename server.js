@@ -1,26 +1,58 @@
 const express = require('express');
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
-const fs = require('fs');
 const app = express();
 const port = 3698;
+const fs = require('fs');
+const { execSync } = require('child_process');
 
-// Clear the session directory if it has issues
+// First check where chrome/chromium is installed
+let chromePath;
 try {
-  const sessionDir = './.wwebjs_auth/session';
-  if (fs.existsSync(sessionDir)) {
-    console.log('Checking session directory...');
+  // Try to find various chrome/chromium executables
+  const possiblePaths = [
+    '/usr/bin/chromium-browser',
+    '/usr/bin/chromium',
+    '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/chrome'
+  ];
+  
+  for (const path of possiblePaths) {
+    if (fs.existsSync(path)) {
+      chromePath = path;
+      console.log(`Found browser at: ${chromePath}`);
+      break;
+    }
+  }
+  
+  // If no browser found, try which command
+  if (!chromePath) {
+    try {
+      chromePath = execSync('which chromium-browser || which chromium || which google-chrome').toString().trim();
+      console.log(`Found browser via which command: ${chromePath}`);
+    } catch (e) {
+      console.log('Could not find browser with which command');
+    }
   }
 } catch (error) {
-  console.error('Error checking session directory:', error);
+  console.error('Error finding Chrome/Chromium:', error);
 }
 
-// WhatsApp client setup
+// Log whether we found a browser path
+if (chromePath) {
+  console.log(`Using browser at: ${chromePath}`);
+} else {
+  console.log('No Chrome/Chromium browser found. Will use default.');
+}
+
+console.log('Checking session directory...');
+
+// WhatsApp client configuration
 const client = new Client({
-    authStrategy: new LocalAuth({ clientId: "whatsapp-otp" }),
+    authStrategy: new LocalAuth(),
     puppeteer: {
         headless: true,
-        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
@@ -28,77 +60,42 @@ const client = new Client({
             '--disable-accelerated-2d-canvas',
             '--no-first-run',
             '--no-zygote',
-            '--disable-gpu',
-            '--disable-extensions',
-            '--disable-component-extensions-with-background-pages',
-            '--disable-default-apps',
-            '--mute-audio',
-            '--hide-scrollbars'
+            '--single-process',
+            '--disable-gpu'
         ],
+        executablePath: chromePath
     }
 });
 
-// Create an authenticated flag
-let isAuthenticated = false;
-
-// QR code event
+// QR code generation
 client.on('qr', (qr) => {
-    console.log('New QR code received, please scan:');
     qrcode.generate(qr, { small: true });
+    console.log('Please scan the QR code with your WhatsApp');
 });
 
-// Authentication event
-client.on('authenticated', () => {
-    console.log('WhatsApp authentication successful!');
-    isAuthenticated = true;
-});
-
-// Auth failure event
-client.on('auth_failure', (msg) => {
-    console.error('WhatsApp authentication failed:', msg);
-    isAuthenticated = false;
-});
-
-// Ready event
+// Connection ready event
 client.on('ready', () => {
-    console.log('WhatsApp Client is ready to send messages!');
-    isAuthenticated = true;
+    console.log('WhatsApp Client is ready!');
 });
 
-// Disconnected event
+// Handle authentication failures
+client.on('auth_failure', (msg) => {
+    console.error('Authentication failure:', msg);
+});
+
+// Handle disconnection
 client.on('disconnected', (reason) => {
-    console.log('WhatsApp was disconnected:', reason);
-    isAuthenticated = false;
-    // Attempt to reconnect
-    setTimeout(() => {
-        console.log('Attempting to reconnect...');
-        client.initialize();
-    }, 5000);
+    console.log('Client was disconnected:', reason);
 });
 
-// Send OTP function with better error handling
+// Send OTP function
 function sendOTP(phoneNumber, otp) {
-    if (!isAuthenticated) {
-        console.error('Cannot send OTP: WhatsApp client not authenticated');
-        return Promise.reject(new Error('WhatsApp client not authenticated'));
-    }
-
-    // Ensure phone number is formatted correctly
-    let formattedNumber = phoneNumber.toString().replace(/[^0-9]/g, '');
-    if (!formattedNumber.startsWith('9')) {
-        // Add required country code if missing
-        formattedNumber = '9' + formattedNumber;
-    }
-
-    const chatId = formattedNumber + '@c.us';
-    const message = ` رمز التحقق هو : 
-     ${otp}`;
+    const number = phoneNumber.includes('@c.us') ? phoneNumber : `${phoneNumber}@c.us`;
+    const message = `Your OTP is: ${otp}`;
     
-    console.log(`Attempting to send OTP to ${chatId}`);
-    
-    return client.sendMessage(chatId, message)
+    return client.sendMessage(number, message)
         .then(response => {
-            console.log('OTP sent successfully:', response.id._serialized);
+            console.log('OTP sent successfully:', response);
             return response;
         })
         .catch(error => {
@@ -107,85 +104,59 @@ function sendOTP(phoneNumber, otp) {
         });
 }
 
-// Express setup
+// Express middleware
 app.use(express.json());
 
-// Health check endpoint
-app.get('/health', (req, res) => {
-    res.status(200).json({
-        status: 'ok',
-        whatsappAuthenticated: isAuthenticated
-    });
+// OTP endpoint
+app.post('/send-otp', async (req, res) => {
+    try {
+        const { phoneNumber, otp } = req.body;
+        
+        if (!phoneNumber || !otp) {
+            return res.status(400).json({ error: 'Phone number and OTP are required' });
+        }
+
+        // Check if client is ready
+        if (!client.info) {
+            return res.status(503).json({ 
+                error: 'WhatsApp client not ready yet',
+                message: 'Please scan the QR code first to connect WhatsApp'
+            });
+        }
+
+        // Send OTP
+        await sendOTP(phoneNumber, otp);
+        
+        // Response
+        res.status(200).json({ success: true, message: 'OTP sent successfully' });
+    } catch (error) {
+        console.error('Error in /send-otp endpoint:', error);
+        res.status(500).json({ 
+            error: 'Failed to send OTP', 
+            message: error.message 
+        });
+    }
 });
 
 // Status endpoint
 app.get('/status', (req, res) => {
-    res.status(200).json({
-        whatsappAuthenticated: isAuthenticated,
-        timestamp: new Date().toISOString()
+    res.json({
+        status: client.info ? 'connected' : 'disconnected',
+        info: client.info || null
     });
 });
 
-// OTP endpoint with better error handling
-app.post('/send-otp', async (req, res) => {
-    const { phoneNumber, otp } = req.body;
-    
-    console.log(`Received OTP request for phone: ${phoneNumber}`);
-    
-    if (!phoneNumber || !otp) {
-        return res.status(400).json({
-            success: false,
-            error: 'Phone number and OTP are required'
-        });
-    }
-
-    if (!isAuthenticated) {
-        return res.status(503).json({
-            success: false,
-            error: 'WhatsApp service not ready. Please wait for authentication.'
-        });
-    }
-
-    try {
-        await sendOTP(phoneNumber, otp);
-        res.status(200).json({
-            success: true,
-            message: 'OTP sent successfully'
-        });
-    } catch (error) {
-        console.error('Failed to send OTP:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Failed to send OTP',
-            details: error.message
-        });
-    }
-});
-
-// Start the server first, then initialize WhatsApp client
+// Start the server
 app.listen(port, '0.0.0.0', () => {
     console.log(`Server is running on http://0.0.0.0:${port}`);
-    
-    // Initialize WhatsApp client
     console.log('Starting WhatsApp client...');
-    setTimeout(() => {
-        client.initialize()
-            .catch(err => {
-                console.error('Failed to initialize WhatsApp client:', err);
-            });
-    }, 2000); // Small delay before initialization
-});
-
-// Handle process termination
-process.on('SIGINT', async () => {
-    console.log('Shutting down...');
-    if (client) {
-        try {
-            await client.destroy();
-            console.log('WhatsApp client destroyed');
-        } catch (err) {
-            console.error('Error destroying WhatsApp client:', err);
-        }
+    
+    // Initialize client with error handling
+    try {
+        client.initialize().catch(err => {
+            console.error('Error during client initialization:', err);
+        });
+    } catch (error) {
+        console.error('Failed to initialize WhatsApp client:', error);
     }
-    process.exit(0);
 });
