@@ -2,7 +2,7 @@ const express = require('express');
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const app = express();
-const port = 3000; // يمكن تغيير المنفذ حسب الحاجة
+const port = 3698; // يمكن تغيير المنفذ حسب الحاجة
 
 // إعداد العميل الخاص بـ WhatsApp
 const client = new Client({
