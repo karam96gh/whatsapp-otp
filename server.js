@@ -124,11 +124,17 @@ app.post('/send-otp', async (req, res) => {
             });
         }
         if (phoneNumber.startsWith('+')) {
-            phoneNumber = phoneNumber.substring(1);
+            await sendOTP(phoneNumber.substring(1), otp);
+
+        }
+        else
+        {
+            
+            await sendOTP(phoneNumber, otp);
+
         }
         // Send OTP
 
-        await sendOTP(phoneNumber, otp);
         
         // Response
         res.status(200).json({ success: true, message: 'OTP sent successfully' });
